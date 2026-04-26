@@ -63,7 +63,7 @@ router.get("/github", (req, res) => {
 
   const params = new URLSearchParams({
     client_id: process.env.GITHUB_CLIENT_ID,
-    redirect_uri: `${req.protocol}://${req.get("host")}/api/v1/auth/github/callback`,
+     redirect_uri: `https://insighta-labs-backend-production.up.railway.app/api/v1/auth/github/callback`,
     scope: "read:user user:email",
     state,
     // Note: GitHub doesn't natively support PKCE but we store the verifier
