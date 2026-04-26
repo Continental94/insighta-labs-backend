@@ -22,7 +22,9 @@ app.use(cors({
   origin: [
     "http://localhost:5173",
     "http://localhost:3001",
+    "https://insighta-portal.vercel.app",
     "https://insighta-portal-e8l3evwle-infinity-quotients-projects.vercel.app",
+    "https://insighta-portal-7g8lblfek-infinity-quotients-projects.vercel.app",
     process.env.FRONTEND_URL,
   ].filter(Boolean),
   credentials: true,
