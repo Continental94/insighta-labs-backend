@@ -66,4 +66,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ status: "error", message: "Internal server error" });
 });
 
-// ── Start Server ──────────────────────────────────────────────
+// ── Start Server ───────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Insighta Labs+ running on port ${PORT}`);
+});
