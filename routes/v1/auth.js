@@ -156,4 +156,103 @@ router.get("/github/callback", async (req, res) => {
       } else {
         const newUser = {
           id: uuidv4(),
-          gith
+          github_id: String(githubUser.id),
+          username: githubUser.login,
+          email: githubUser.email,
+          avatar_url: githubUser.avatar_url,
+          role: "analyst",
+        };
+        db.run(
+          `INSERT INTO users (id, github_id, username, email, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)`,
+          [newUser.id, newUser.github_id, newUser.username, newUser.email, newUser.avatar_url, newUser.role],
+          () => afterUpsert(newUser)
+        );
+      }
+    });
+  } catch (err) {
+    console.error("OAuth callback error:", err.message);
+    res.status(500).json({ status: "error", message: "Authentication failed" });
+  }
+});
+
+// ─── REFRESH TOKEN ─────────────────────────────────────────────────────────────
+
+router.post("/refresh", (req, res) => {
+  const token = req.body.refresh_token || (req.cookies && req.cookies.refresh_token);
+
+  if (!token) {
+    return res.status(401).json({ status: "error", message: "Refresh token required" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+
+    db.get(
+      `SELECT * FROM refresh_tokens WHERE token = ? AND user_id = ?`,
+      [token, decoded.id],
+      (err, row) => {
+        if (err || !row) {
+          return res.status(401).json({ status: "error", message: "Invalid refresh token" });
+        }
+
+        if (new Date(row.expires_at) < new Date()) {
+          return res.status(401).json({ status: "error", message: "Refresh token expired" });
+        }
+
+        db.get(`SELECT * FROM users WHERE id = ?`, [decoded.id], (err, user) => {
+          if (err || !user) {
+            return res.status(401).json({ status: "error", message: "User not found" });
+          }
+
+          const newAccessToken = generateAccessToken(user);
+
+          if (req.cookies && req.cookies.refresh_token) {
+            res.cookie("access_token", newAccessToken, {
+              httpOnly: true,
+              secure: true,
+              sameSite: "none",
+              maxAge: 15 * 60 * 1000,
+            });
+            return res.json({ status: "success", message: "Token refreshed" });
+          } else {
+            return res.json({ status: "success", access_token: newAccessToken });
+          }
+        });
+      }
+    );
+  } catch (err) {
+    return res.status(401).json({ status: "error", message: "Invalid refresh token" });
+  }
+});
+
+// ─── LOGOUT ───────────────────────────────────────────────────────────────────
+
+router.post("/logout", authenticate, (req, res) => {
+  const token = req.body.refresh_token || (req.cookies && req.cookies.refresh_token);
+
+  if (token) {
+    db.run(`DELETE FROM refresh_tokens WHERE token = ?`, [token]);
+  }
+
+  res.clearCookie("access_token", { sameSite: "none", secure: true });
+  res.clearCookie("refresh_token", { sameSite: "none", secure: true });
+  res.clearCookie("csrf_token");
+
+  res.json({ status: "success", message: "Logged out successfully" });
+});
+
+// ─── GET CURRENT USER ─────────────────────────────────────────────────────────
+
+router.get("/me", authenticate, (req, res) => {
+  db.get(`SELECT id, username, email, avatar_url, role, created_at FROM users WHERE id = ?`,
+    [req.user.id],
+    (err, user) => {
+      if (err || !user) {
+        return res.status(404).json({ status: "error", message: "User not found" });
+      }
+      res.json({ status: "success", data: user });
+    }
+  );
+});
+
+module.exports = router;
