@@ -22,9 +22,10 @@ app.use(cors({
   origin: [
     "http://localhost:5173",
     "http://localhost:3001",
+    "https://insighta-portal-e8l3evwle-infinity-quotients-projects.vercel.app",
     process.env.FRONTEND_URL,
   ].filter(Boolean),
-  credentials: true, // Allow cookies
+  credentials: true,
 }));
 
 // ── Body & Cookie Parsing ──────────────────────────────────────────────────────
@@ -65,8 +66,4 @@ app.use((err, req, res, next) => {
   res.status(500).json({ status: "error", message: "Internal server error" });
 });
 
-// ── Start Server ───────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Insighta Labs+ running on port ${PORT}`);
-});
+// ── Start Server ──────────────────────────────────────────────
