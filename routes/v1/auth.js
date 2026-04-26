@@ -103,7 +103,7 @@ router.get("/github/callback", async (req, res) => {
         client_id: process.env.GITHUB_CLIENT_ID,
         client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
-        redirect_uri: `${req.protocol}://${req.get("host")}/api/v1/auth/github/callback`,
+        redirect_uri: `https://insighta-labs-backend-production.up.railway.app/api/v1/auth/github/callback`,
       },
       { headers: { Accept: "application/json" } }
     );
