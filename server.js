@@ -18,17 +18,31 @@ const userRoutes = require("./routes/v1/users");
 const app = express();
 
 // ── CORS ───────────────────────────────────────────────────────────────────────
-app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:3001",
-    "https://insighta-portal.vercel.app",
-    "https://insighta-portal-e8l3evwle-infinity-quotients-projects.vercel.app",
-    "https://insighta-portal-7g8lblfek-infinity-quotients-projects.vercel.app",
-    process.env.FRONTEND_URL,
-  ].filter(Boolean),
-  credentials: true,
-}));
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3001",
+  "https://insighta-portal.vercel.app",
+  "https://insighta-portal-e8l3evwle-infinity-quotients-projects.vercel.app",
+  "https://insighta-portal-7g8lblfek-infinity-quotients-projects.vercel.app",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin || allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin || "*");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-CSRF-Token");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
 
 // ── Body & Cookie Parsing ──────────────────────────────────────────────────────
 app.use(express.json());
