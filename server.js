@@ -57,6 +57,11 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/profiles", profileRoutes);
 app.use("/api/v1/users", userRoutes);
 
+// ── Aliases without version prefix ────────────────────────────────────────────
+app.use("/api/auth", authRoutes);
+app.use("/api/profiles", profileRoutes);
+app.use("/api/users", userRoutes);
+
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ status: "error", message: "Route not found" });
