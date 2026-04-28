@@ -1,32 +1,30 @@
-// Simple in-memory rate limiter
-// 100 requests per 15 minutes per IP
 const requests = new Map();
 
-const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const MAX_REQUESTS = 100;
+const WINDOW_MS = 60 * 1000;
+const MAX_REQUESTS = 10;
 
 const rateLimiter = (req, res, next) => {
   const ip = req.ip || req.connection.remoteAddress;
   const now = Date.now();
+  const key = `${ip}:${req.path}`;
 
-  if (!requests.has(ip)) {
-    requests.set(ip, { count: 1, startTime: now });
+  if (!requests.has(key)) {
+    requests.set(key, { count: 1, startTime: now });
     return next();
   }
 
-  const record = requests.get(ip);
+  const record = requests.get(key);
 
-  // Reset window if expired
   if (now - record.startTime > WINDOW_MS) {
-    requests.set(ip, { count: 1, startTime: now });
+    requests.set(key, { count: 1, startTime: now });
     return next();
   }
 
-  // Too many requests
   if (record.count >= MAX_REQUESTS) {
     return res.status(429).json({
       status: "error",
-      message: "Too many requests. Please try again in 15 minutes.",
+      message: "Too many requests. Please try again later.",
+      retry_after: Math.ceil((record.startTime + WINDOW_MS - now) / 1000),
     });
   }
 

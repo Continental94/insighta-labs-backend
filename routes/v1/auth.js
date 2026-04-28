@@ -9,6 +9,8 @@ const authenticate = require("../../middleware/authenticate");
 
 const pkceStore = new Map();
 
+const BACKEND_URL = "https://insighta-labs-backend-production.up.railway.app";
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function generateCodeVerifier() {
@@ -44,7 +46,7 @@ function saveRefreshToken(userId, token) {
   );
 }
 
-// ─── STEP 1: Initiate OAuth login ─────────────────────────────────────────────
+// ─── STEP 1: Initiate OAuth — REDIRECTS directly to GitHub ────────────────────
 
 router.get("/github", (req, res) => {
   const source = req.query.source || "web";
@@ -52,12 +54,47 @@ router.get("/github", (req, res) => {
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
 
-  pkceStore.set(state, { codeVerifier, source });
+  pkceStore.set(state, { codeVerifier, codeChallenge, source });
   setTimeout(() => pkceStore.delete(state), 10 * 60 * 1000);
 
   const params = new URLSearchParams({
     client_id: process.env.GITHUB_CLIENT_ID,
-    redirect_uri: `https://insighta-labs-backend-production.up.railway.app/api/v1/auth/github/callback`,
+    redirect_uri: `${BACKEND_URL}/api/v1/auth/github/callback`,
+    scope: "read:user user:email",
+    state,
+  });
+
+  res.cookie("oauth_state", state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    maxAge: 10 * 60 * 1000,
+  });
+
+  res.cookie("code_challenge", codeChallenge, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    maxAge: 10 * 60 * 1000,
+  });
+
+  return res.redirect(`https://github.com/login/oauth/authorize?${params.toString()}`);
+});
+
+// ─── CLI: Get auth URL as JSON ─────────────────────────────────────────────────
+
+router.get("/github/url", (req, res) => {
+  const source = "cli";
+  const state = crypto.randomBytes(16).toString("hex");
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(codeVerifier);
+
+  pkceStore.set(state, { codeVerifier, codeChallenge, source });
+  setTimeout(() => pkceStore.delete(state), 10 * 60 * 1000);
+
+  const params = new URLSearchParams({
+    client_id: process.env.GITHUB_CLIENT_ID,
+    redirect_uri: `${BACKEND_URL}/api/v1/auth/github/callback`,
     scope: "read:user user:email",
     state,
   });
@@ -75,8 +112,12 @@ router.get("/github", (req, res) => {
 router.get("/github/callback", async (req, res) => {
   const { code, state } = req.query;
 
-  if (!code || !state) {
-    return res.status(400).json({ status: "error", message: "Missing code or state" });
+  if (!code) {
+    return res.status(400).json({ status: "error", message: "Missing code" });
+  }
+
+  if (!state) {
+    return res.status(400).json({ status: "error", message: "Missing state" });
   }
 
   const pkceEntry = pkceStore.get(state);
@@ -85,7 +126,12 @@ router.get("/github/callback", async (req, res) => {
   }
 
   pkceStore.delete(state);
-  const { source } = pkceEntry;
+  const { codeVerifier, codeChallenge, source } = pkceEntry;
+
+  const expectedChallenge = generateCodeChallenge(codeVerifier);
+  if (expectedChallenge !== codeChallenge) {
+    return res.status(400).json({ status: "error", message: "PKCE validation failed" });
+  }
 
   try {
     const tokenResponse = await axios.post(
@@ -94,7 +140,7 @@ router.get("/github/callback", async (req, res) => {
         client_id: process.env.GITHUB_CLIENT_ID,
         client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
-        redirect_uri: `https://insighta-labs-backend-production.up.railway.app/api/v1/auth/github/callback`,
+        redirect_uri: `${BACKEND_URL}/api/v1/auth/github/callback`,
       },
       { headers: { Accept: "application/json" } }
     );
@@ -113,10 +159,7 @@ router.get("/github/callback", async (req, res) => {
     db.get(`SELECT * FROM users WHERE github_id = ?`, [String(githubUser.id)], (err, existingUser) => {
       if (err) return res.status(500).json({ status: "error", message: err.message });
 
-      let user;
-
-      const afterUpsert = (u) => {
-        user = u;
+      const afterUpsert = (user) => {
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
         saveRefreshToken(user.id, refreshToken);
@@ -236,7 +279,7 @@ router.post("/logout", authenticate, (req, res) => {
 
   res.clearCookie("access_token", { sameSite: "none", secure: true });
   res.clearCookie("refresh_token", { sameSite: "none", secure: true });
-  res.clearCookie("csrf_token");
+  res.clearCookie("csrf_token", { sameSite: "none", secure: true });
 
   res.json({ status: "success", message: "Logged out successfully" });
 });
@@ -244,7 +287,8 @@ router.post("/logout", authenticate, (req, res) => {
 // ─── GET CURRENT USER ─────────────────────────────────────────────────────────
 
 router.get("/me", authenticate, (req, res) => {
-  db.get(`SELECT id, username, email, avatar_url, role, created_at FROM users WHERE id = ?`,
+  db.get(
+    `SELECT id, username, email, avatar_url, role, created_at FROM users WHERE id = ?`,
     [req.user.id],
     (err, user) => {
       if (err || !user) {
