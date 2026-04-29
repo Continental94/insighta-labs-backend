@@ -217,19 +217,23 @@ router.get("/github/callback", async (req, res) => {
           () => afterUpsert(existingUser)
         );
       } else {
-        const newUser = {
-          id: uuidv4(),
-          github_id: String(githubUser.id),
-          username: githubUser.login,
-          email: githubUser.email,
-          avatar_url: githubUser.avatar_url,
-          role: "analyst",
-        };
-        db.run(
-          `INSERT INTO users (id, github_id, username, email, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)`,
-          [newUser.id, newUser.github_id, newUser.username, newUser.email, newUser.avatar_url, newUser.role],
-          () => afterUpsert(newUser)
-        );
+        // First user ever gets admin, everyone else gets analyst
+        db.get(`SELECT COUNT(*) as count FROM users`, [], (err, row) => {
+          const role = (!err && row && row.count === 0) ? "admin" : "analyst";
+          const newUser = {
+            id: uuidv4(),
+            github_id: String(githubUser.id),
+            username: githubUser.login,
+            email: githubUser.email,
+            avatar_url: githubUser.avatar_url,
+            role,
+          };
+          db.run(
+            `INSERT INTO users (id, github_id, username, email, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)`,
+            [newUser.id, newUser.github_id, newUser.username, newUser.email, newUser.avatar_url, newUser.role],
+            () => afterUpsert(newUser)
+          );
+        });
       }
     });
   } catch (err) {
@@ -239,6 +243,10 @@ router.get("/github/callback", async (req, res) => {
 });
 
 // ─── REFRESH TOKEN ─────────────────────────────────────────────────────────────
+
+router.get("/refresh", (req, res) => {
+  res.status(405).json({ status: "error", message: "Method not allowed. Use POST." });
+});
 
 router.post("/refresh", (req, res) => {
   const token = req.body.refresh_token || (req.cookies && req.cookies.refresh_token);
@@ -289,6 +297,10 @@ router.post("/refresh", (req, res) => {
 });
 
 // ─── LOGOUT ───────────────────────────────────────────────────────────────────
+
+router.get("/logout", (req, res) => {
+  res.status(405).json({ status: "error", message: "Method not allowed. Use POST." });
+});
 
 router.post("/logout", authenticate, (req, res) => {
   const token = req.body.refresh_token || (req.cookies && req.cookies.refresh_token);
@@ -351,15 +363,6 @@ router.post("/test-token", (req, res) => {
       });
     }
   );
-});
-
-// Handle wrong methods on refresh and logout
-router.get("/refresh", (req, res) => {
-  res.status(405).json({ status: "error", message: "Method not allowed. Use POST." });
-});
-
-router.get("/logout", (req, res) => {
-  res.status(405).json({ status: "error", message: "Method not allowed. Use POST." });
 });
 
 module.exports = router;

@@ -56,6 +56,10 @@ db.serialize(() => {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  // ── Wipe users and tokens so first OAuth login gets admin ──────────────
+  db.run(`DELETE FROM refresh_tokens`);
+  db.run(`DELETE FROM users`);
 });
 
 module.exports = db;
