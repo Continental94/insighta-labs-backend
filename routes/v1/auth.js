@@ -353,4 +353,13 @@ router.post("/test-token", (req, res) => {
   );
 });
 
+// Handle wrong methods on refresh and logout
+router.get("/refresh", (req, res) => {
+  res.status(405).json({ status: "error", message: "Method not allowed. Use POST." });
+});
+
+router.get("/logout", (req, res) => {
+  res.status(405).json({ status: "error", message: "Method not allowed. Use POST." });
+});
+
 module.exports = router;
