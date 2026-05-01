@@ -5,7 +5,6 @@ const authenticate = require("../../middleware/authenticate");
 const authorize = require("../../middleware/authorize");
 
 // ─── GET ALL PROFILES (filter + sort + pagination) ────────────────────────────
-// Both admin and analyst can access
 
 router.get("/", authenticate, authorize("admin", "analyst"), (req, res) => {
   const {
@@ -27,7 +26,6 @@ router.get("/", authenticate, authorize("admin", "analyst"), (req, res) => {
   let params = [];
   let countParams = [];
 
-  // ── Filters ────────────────────────────────────────────────────────────
   if (gender) {
     query += " AND LOWER(gender) = LOWER(?)";
     countQuery += " AND LOWER(gender) = LOWER(?)";
@@ -77,7 +75,6 @@ router.get("/", authenticate, authorize("admin", "analyst"), (req, res) => {
     countParams.push(Number(min_country_probability));
   }
 
-  // ── Sorting ────────────────────────────────────────────────────────────
   const validSortFields = ["age", "created_at", "gender_probability"];
   const validOrder = ["asc", "desc"];
 
@@ -90,7 +87,6 @@ router.get("/", authenticate, authorize("admin", "analyst"), (req, res) => {
 
   query += ` ORDER BY ${sort_by} ${order.toUpperCase()}`;
 
-  // ── Pagination ─────────────────────────────────────────────────────────
   const pageNum = Math.max(1, Number(page));
   const limitNum = Math.min(Math.max(1, Number(limit)), 50);
   const offset = (pageNum - 1) * limitNum;
@@ -98,7 +94,6 @@ router.get("/", authenticate, authorize("admin", "analyst"), (req, res) => {
   query += " LIMIT ? OFFSET ?";
   params.push(limitNum, offset);
 
-  // ── Execute ────────────────────────────────────────────────────────────
   db.get(countQuery, countParams, (err, countRow) => {
     if (err) return res.status(500).json({ status: "error", message: err.message });
 
@@ -110,6 +105,10 @@ router.get("/", authenticate, authorize("admin", "analyst"), (req, res) => {
 
       res.status(200).json({
         status: "success",
+        page: pageNum,
+        limit: limitNum,
+        total,
+        total_pages: totalPages,
         pagination: {
           page: pageNum,
           limit: limitNum,
@@ -117,6 +116,11 @@ router.get("/", authenticate, authorize("admin", "analyst"), (req, res) => {
           total_pages: totalPages,
           has_next: pageNum < totalPages,
           has_prev: pageNum > 1,
+        },
+        links: {
+          self: `?page=${pageNum}&limit=${limitNum}`,
+          next: pageNum < totalPages ? `?page=${pageNum + 1}&limit=${limitNum}` : null,
+          prev: pageNum > 1 ? `?page=${pageNum - 1}&limit=${limitNum}` : null,
         },
         data: rows,
       });
@@ -136,31 +140,25 @@ router.get("/search", authenticate, authorize("admin", "analyst"), (req, res) =>
   const queryText = q.toLowerCase();
   let filters = {};
 
-  // Gender
   if (queryText.includes("female")) filters.gender = "female";
   else if (queryText.includes("male")) filters.gender = "male";
 
-  // Age group
   if (queryText.includes("child")) filters.age_group = "child";
   else if (queryText.includes("teen")) filters.age_group = "teenager";
   else if (queryText.includes("adult")) filters.age_group = "adult";
   else if (queryText.includes("senior")) filters.age_group = "senior";
 
-  // Young
   if (queryText.includes("young")) {
     filters.min_age = 16;
     filters.max_age = 24;
   }
 
-  // Above X age
   const aboveMatch = queryText.match(/above (\d+)/);
   if (aboveMatch) filters.min_age = Number(aboveMatch[1]);
 
-  // Below X age
   const belowMatch = queryText.match(/below (\d+)/);
   if (belowMatch) filters.max_age = Number(belowMatch[1]);
 
-  // Countries
   const countryMap = {
     nigeria: "NG", kenya: "KE", angola: "AO", ghana: "GH",
     uganda: "UG", tanzania: "TZ", benin: "BJ", ethiopia: "ET",
@@ -177,7 +175,7 @@ router.get("/search", authenticate, authorize("admin", "analyst"), (req, res) =>
   if (Object.keys(filters).length === 0) {
     return res.status(400).json({
       status: "error",
-      message: "Unable to interpret query. Try something like: 'young females in Nigeria'",
+      message: "Unable to interpret query. Try: 'young females in Nigeria'",
     });
   }
 
@@ -199,7 +197,6 @@ router.get("/search", authenticate, authorize("admin", "analyst"), (req, res) =>
   if (filters.min_age) addFilter(" AND age >= ?", filters.min_age);
   if (filters.max_age) addFilter(" AND age <= ?", filters.max_age);
 
-  // Pagination
   const pageNum = Math.max(1, Number(req.query.page || 1));
   const limitNum = Math.min(Math.max(1, Number(req.query.limit || 10)), 50);
   const offset = (pageNum - 1) * limitNum;
@@ -220,6 +217,10 @@ router.get("/search", authenticate, authorize("admin", "analyst"), (req, res) =>
         status: "success",
         query: q,
         filters_applied: filters,
+        page: pageNum,
+        limit: limitNum,
+        total,
+        total_pages: totalPages,
         pagination: {
           page: pageNum,
           limit: limitNum,
@@ -228,14 +229,59 @@ router.get("/search", authenticate, authorize("admin", "analyst"), (req, res) =>
           has_next: pageNum < totalPages,
           has_prev: pageNum > 1,
         },
+        links: {
+          self: `?page=${pageNum}&limit=${limitNum}`,
+          next: pageNum < totalPages ? `?page=${pageNum + 1}&limit=${limitNum}` : null,
+          prev: pageNum > 1 ? `?page=${pageNum - 1}&limit=${limitNum}` : null,
+        },
         data: rows,
       });
     });
   });
 });
 
+// ─── CREATE PROFILE (admin only) ──────────────────────────────────────────────
+
+router.post("/", authenticate, authorize("admin"), (req, res) => {
+  const { name, gender, age, country_id, country_name } = req.body;
+
+  if (!name || !gender || !age || !country_id) {
+    return res.status(400).json({
+      status: "error",
+      message: "Missing required fields: name, gender, age, country_id",
+    });
+  }
+
+  const { v4: uuidv4 } = require("uuid");
+  const id = uuidv4();
+  const created_at = new Date().toISOString();
+
+  const age_group = age < 13 ? "child" : age < 18 ? "teenager" : age < 65 ? "adult" : "senior";
+
+  db.run(
+    `INSERT INTO profiles (id, name, gender, age, age_group, country_id, country_name, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, name, gender, age, age_group, country_id, country_name || "", created_at],
+    function (err) {
+      if (err) return res.status(500).json({ status: "error", message: err.message });
+      res.status(201).json({ status: "success", message: "Profile created", id });
+    }
+  );
+});
+
+// ─── DELETE PROFILE (admin only) ──────────────────────────────────────────────
+
+router.delete("/:id", authenticate, authorize("admin"), (req, res) => {
+  db.run(`DELETE FROM profiles WHERE id = ?`, [req.params.id], function (err) {
+    if (err) return res.status(500).json({ status: "error", message: err.message });
+    if (this.changes === 0) {
+      return res.status(404).json({ status: "error", message: "Profile not found" });
+    }
+    res.json({ status: "success", message: "Profile deleted" });
+  });
+});
+
 // ─── CSV EXPORT ────────────────────────────────────────────────────────────────
-// Admin and analyst can export
 
 router.get("/export", authenticate, authorize("admin", "analyst"), (req, res) => {
   const { gender, country_id, age_group } = req.query;
@@ -247,7 +293,7 @@ router.get("/export", authenticate, authorize("admin", "analyst"), (req, res) =>
   if (country_id) { query += " AND LOWER(country_id) = LOWER(?)"; params.push(country_id); }
   if (age_group) { query += " AND LOWER(age_group) = LOWER(?)"; params.push(age_group); }
 
-  query += " LIMIT 10000"; // Safety cap
+  query += " LIMIT 10000";
 
   db.all(query, params, (err, rows) => {
     if (err) return res.status(500).json({ status: "error", message: err.message });
@@ -256,7 +302,6 @@ router.get("/export", authenticate, authorize("admin", "analyst"), (req, res) =>
       return res.status(404).json({ status: "error", message: "No profiles found for export" });
     }
 
-    // Build CSV
     const headers = Object.keys(rows[0]).join(",");
     const csvRows = rows.map((row) =>
       Object.values(row)

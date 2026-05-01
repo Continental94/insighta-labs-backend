@@ -10,6 +10,7 @@ const seedDatabase = require("./services/seed");
 const rateLimiter = require("./middleware/rateLimiter");
 const requestLogger = require("./middleware/requestLogger");
 const { generateCsrfToken, validateCsrfToken } = require("./middleware/csrf");
+const authenticate = require("./middleware/authenticate");
 
 const authRoutes = require("./routes/v1/auth");
 const profileRoutes = require("./routes/v1/profiles");
@@ -36,7 +37,7 @@ app.use((req, res, next) => {
   }
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-CSRF-Token");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-CSRF-Token,X-API-Version");
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(204);
@@ -53,6 +54,18 @@ app.use(rateLimiter);
 app.use(requestLogger);
 app.use(generateCsrfToken);
 app.use(validateCsrfToken);
+
+// ── API Version Check ──────────────────────────────────────────────────────────
+app.use("/api/v1", (req, res, next) => {
+  const version = req.headers["x-api-version"];
+  if (version && version !== "1" && version !== "v1" && version !== "1.0") {
+    return res.status(400).json({
+      status: "error",
+      message: "Unsupported API version. Use X-API-Version: 1",
+    });
+  }
+  next();
+});
 
 // ── Seed database ──────────────────────────────────────────────────────────────
 seedDatabase();
@@ -75,6 +88,20 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/profiles", profileRoutes);
 app.use("/api/users", userRoutes);
+
+// ── /api/users/me alias ───────────────────────────────────────────────────────
+app.get("/api/users/me", authenticate, (req, res) => {
+  db.get(
+    `SELECT id, username, email, avatar_url, role, created_at FROM users WHERE id = ?`,
+    [req.user.id],
+    (err, user) => {
+      if (err || !user) {
+        return res.status(404).json({ status: "error", message: "User not found" });
+      }
+      res.json({ status: "success", data: user });
+    }
+  );
+});
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {
