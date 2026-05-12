@@ -8,7 +8,7 @@ const db = require("../../database/db");
 const authenticate = require("../../middleware/authenticate");
 
 const pkceStore = new Map();
-const BACKEND_URL = "https://insighta-labs-backend-production.up.railway.app";
+const BACKEND_URL = "https://insighta-labs-backend.onrender.com";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
