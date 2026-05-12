@@ -327,4 +327,52 @@ router.get("/:id", authenticate, authorize("admin", "analyst"), (req, res) => {
   });
 });
 
+// ─── CSV IMPORT ────────────────────────────────────────────────────────────────
+
+const upload = require("../../middleware/upload");
+const { createJob, getJob } = require("../../services/importJob");
+const { processCSV } = require("../../services/csvProcessor");
+
+// Upload CSV file — admin only
+router.post("/import", authenticate, authorize("admin"), upload.single("file"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      status: "error",
+      message: "No file uploaded. Please upload a CSV file.",
+    });
+  }
+
+  // Create job
+  const job = createJob(req.file.originalname);
+
+  // Process in background — non-blocking
+  setImmediate(() => {
+    processCSV(db, job.id, req.file.path);
+  });
+
+  // Return job ID immediately
+  res.status(202).json({
+    status: "success",
+    job_id: job.id,
+    message: "File received. Processing started.",
+  });
+});
+
+// Get import job status
+router.get("/import/:jobId", authenticate, authorize("admin"), (req, res) => {
+  const job = getJob(req.params.jobId);
+
+  if (!job) {
+    return res.status(404).json({
+      status: "error",
+      message: "Job not found",
+    });
+  }
+
+  res.json({
+    status: "success",
+    job,
+  });
+});
+
 module.exports = router;

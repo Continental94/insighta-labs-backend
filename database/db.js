@@ -57,7 +57,16 @@ db.serialize(() => {
     )
   `);
 
-  // ── Wipe users and tokens so first OAuth login gets admin ──────────────
+  // ── Stage 4B: indexes for query performance ────────────────────────────
+  db.run(`CREATE INDEX IF NOT EXISTS idx_profiles_gender ON profiles(gender)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_profiles_country_id ON profiles(country_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_profiles_age ON profiles(age)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_profiles_age_group ON profiles(age_group)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_profiles_created_at ON profiles(created_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_profiles_gender_country ON profiles(gender, country_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_profiles_name ON profiles(name)`);
+
+  // ── Wipe users so first OAuth login gets admin ─────────────────────────
   db.run(`DELETE FROM refresh_tokens`);
   db.run(`DELETE FROM users`);
 });
